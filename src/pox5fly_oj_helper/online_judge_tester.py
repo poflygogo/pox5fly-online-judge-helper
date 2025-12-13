@@ -123,7 +123,16 @@ class OnlineJudgeTester:
         cases_to_run: Optional[List[Union[int, str]]],
     ) -> List[tuple[pathlib.Path, Optional[pathlib.Path]]]:
         """
-        根據 cases_to_run 篩選測資。
+        根據使用者指定的 cases_to_run 列表篩選要執行的測資。
+
+        Args:
+            all_cases: 所有已發現的測資列表 [(input_path, output_path), ...]。
+            cases_to_run: 使用者指定的測資編號或名稱列表。
+                          - 整數 (int): 進行數值匹配 (如 1 匹配 "01.in")。
+                          - 字串 (str): 進行部分包含匹配 (如 "test" 匹配 "my_test_01.in")。
+
+        Returns:
+            篩選後的測資列表。
         """
         if not cases_to_run:
             return all_cases
@@ -360,6 +369,108 @@ class OnlineJudgeTester:
 
         return self.STATUS_WA, "\n".join(error_msg_lines)
 
+    def _handle_child_process(self, sol_func: Callable[[], Any]) -> None:
+        """
+        處理子行程的執行邏輯。
+
+        若檢測到環境變數 OJ_CHILD_PROCESS 為 "1"，則執行用戶代碼。
+        此方法會接管控制權並最終呼叫 sys.exit()，主進程不應調用此方法後繼續執行。
+
+        Args:
+            sol_func: 用戶提供的解題主函式。
+        """
+        if os.environ.get("OJ_CHILD_PROCESS") != "1":
+            return
+
+        try:
+            # 直接執行 sol_func
+            sol_func()
+            # 使用 flush 確保 stdout 內容輸出
+            sys.stdout.flush()
+            sys.exit(0)
+        except Exception:
+            # 捕獲例外並自訂 Traceback 輸出
+            # 目標：過濾掉 online_judge_tester.py 內部的堆疊框架，只顯示使用者代碼部分
+
+            # 取得當前例外資訊
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+
+            # 提取堆疊列表 (SummaryTuple list)
+            tb_list = traceback.extract_tb(exc_traceback)
+
+            # 過濾邏輯：移除檔案路徑包含本模組檔案名的框架
+            # 注意：這裡使用 __file__ 來判斷
+            current_file = os.path.abspath(__file__)
+            filtered_tb = []
+            for frame in tb_list:
+                # 如果 frame.filename 與本模組路徑相同，則過濾掉
+                # 為了保險，比較絕對路徑
+                if os.path.abspath(frame.filename) != current_file:
+                    filtered_tb.append(frame)
+
+            # 重新組合成字串
+            # 格式化 Traceback Header
+            err_msg = "Traceback (most recent call last):\n"
+
+            # 格式化過濾後的堆疊
+            err_msg += "".join(traceback.format_list(filtered_tb))
+
+            # 加上例外本身的訊息 (e.g. ValueError: ...)
+            err_msg += "".join(traceback.format_exception_only(exc_type, exc_value))
+
+            sys.stderr.write(err_msg)
+            sys.exit(1)
+
+    def _print_test_result(self, result: TestResult, show_raw_output: bool) -> None:
+        """
+        格式化並輸出單一測試案例的執行結果。
+
+        Args:
+            result: 測試結果物件。
+            show_raw_output: 是否強制顯示原始輸出。
+        """
+        # 計算時間顯示字串
+        exec_times = result.execution_times
+        if not exec_times:
+            time_str = "N/A"
+        elif len(exec_times) == 1:
+            time_str = f"{exec_times[0]:.2f}ms"
+        else:
+            avg_t = statistics.mean(exec_times)
+            max_t = max(exec_times)
+            min_t = min(exec_times)
+            time_str = f"{avg_t:.2f}ms (min:{min_t:.2f}, max:{max_t:.2f})"
+
+        # 狀態顯示
+        print(f"[{result.case_name}] Status: {result.status} | Time: {time_str}")
+
+        if result.status == self.STATUS_WA:
+            print("  [Wrong Answer Info]")
+            # 縮排顯示錯誤
+            for line in result.error_message.splitlines():
+                print(f"    {line}")
+
+        elif result.status == self.STATUS_RE:
+            print("  [Runtime Error Info]")
+            print(result.error_message)
+
+        elif result.status == self.STATUS_TLE:
+            print("  [Time Limit Exceeded]")
+
+        elif result.status == self.STATUS_MISSING:
+            print(f"  [Info] {result.error_message}")
+            if self.show_missing_output:
+                print("  [Raw Output (Missing .out)]")
+                print(result.output)
+                print("  [End Raw Output]")
+
+        if show_raw_output:
+            print("  [Raw Output]")
+            print(result.output)
+            print("  [End Raw Output]")
+
+        print("-" * 40)
+
     def run_tests(
         self,
         sol_func: Callable[[], Any],
@@ -369,10 +480,10 @@ class OnlineJudgeTester:
         show_raw_output: bool = False,
     ) -> List[TestResult]:
         """
-        執行測試。
+        執行測試的主流程。
 
         Args:
-            sol_func: [必要] 用於子行程執行的解題主函式。
+            sol_func: [必要] 用於子行程執行的解題主函式。若作為 CLI Runner 使用可傳入 dummy。
             strict_comparison: 是否啟用嚴格比對。
             repeat: 單一測資重複執行次數。
             cases_to_run: 指定執行的測資編號/名稱列表。
@@ -381,52 +492,12 @@ class OnlineJudgeTester:
         Returns:
             測試結果列表。
         """
-        # 0. 檢查是否為子行程 (防止遞迴)
-        if os.environ.get("OJ_CHILD_PROCESS") == "1":
-            try:
-                # 直接執行 sol_func
-                sol_func()
-                # 使用 flush 確保 stdout 內容輸出
-                sys.stdout.flush()
-                sys.exit(0)
-            except Exception:
-                # 捕獲例外並自訂 Traceback 輸出
-                # 目標：過濾掉 online_judge_tester.py 內部的堆疊框架，只顯示使用者代碼部分
-
-                # 取得當前例外資訊
-                exc_type, exc_value, exc_traceback = sys.exc_info()
-
-                # 提取堆疊列表 (SummaryTuple list)
-                tb_list = traceback.extract_tb(exc_traceback)
-
-                # 過濾邏輯：移除檔案路徑包含本模組檔案名的框架
-                # 注意：這裡使用 __file__ 來判斷
-                current_file = os.path.abspath(__file__)
-                filtered_tb = []
-                for frame in tb_list:
-                    # 如果 frame.filename 與本模組路徑相同，則過濾掉
-                    # 為了保險，比較絕對路徑
-                    if os.path.abspath(frame.filename) != current_file:
-                        filtered_tb.append(frame)
-
-                # 重新組合成字串
-                # 格式化 Traceback Header
-                err_msg = "Traceback (most recent call last):\n"
-
-                # 格式化過濾後的堆疊
-                err_msg += "".join(traceback.format_list(filtered_tb))
-
-                # 加上例外本身的訊息 (e.g. ValueError: ...)
-                err_msg += "".join(traceback.format_exception_only(exc_type, exc_value))
-
-                sys.stderr.write(err_msg)
-                sys.exit(1)
+        # 0. 檢查並處理子行程執行的情況 (防止遞迴)
+        self._handle_child_process(sol_func)
 
         # 1. 收集與篩選測資
         all_cases = self._collect_test_cases()
         if not all_cases and not cases_to_run:
-            # 如果完全沒測資，且 user 也沒指定，這可能是不預期的
-            # 根據規格： "如果在 test_case_path 中找不到任何對應的 .in 測試檔案，此方法將拋出 FileNotFoundError"
             raise FileNotFoundError(f"No .in files found in {self.test_case_dir}")
 
         target_cases = self._filter_test_cases(all_cases, cases_to_run)
@@ -435,21 +506,22 @@ class OnlineJudgeTester:
             print(f"[WARNING] No cases matched filter: {cases_to_run}")
             return []
 
-        results = []
+        # 2. 顯示相關資訊
         print(f"=== Running Tests on {self.target_script.name} ===")
         print(f"Target: {self.target_script}")
         print(f"Cases: {len(target_cases)} selected")
         print("-" * 40)
 
+        results = []
         for input_path, expected_path in target_cases:
             case_name = input_path.stem
 
-            # 2. 執行
+            # 3. 執行
             status, exec_times, output, error_msg = self._execute_case_with_repeat(
                 input_path, repeat
             )
 
-            # 3. 比對 (若執行成功且有預期輸出且需要比對)
+            # 4. 比對 (若執行成功且有預期輸出且需要比對)
             if status == self.STATUS_AC and self.compare_output:
                 if expected_path:
                     cmp_status, cmp_msg = self._compare_output(
@@ -457,13 +529,12 @@ class OnlineJudgeTester:
                     )
                     status = cmp_status
                     if cmp_status != self.STATUS_AC:
-                        error_msg = cmp_msg  # 覆蓋錯誤訊息為 Diff
+                        error_msg = cmp_msg
                 else:
-                    # 找不到 .out 檔，標記為 MISSING
                     status = self.STATUS_MISSING
                     error_msg = f"找不到對應的 {case_name}.out 檔案"
 
-            # 4. 構建 Result
+            # 5. 構建 Result 並保存
             result = TestResult(
                 case_name=case_name,
                 status=status,
@@ -473,51 +544,8 @@ class OnlineJudgeTester:
             )
             results.append(result)
 
-            # 5. 即時顯示結果
-            # 計算時間顯示字串
-            if not exec_times:
-                time_str = "N/A"
-            elif len(exec_times) == 1:
-                time_str = f"{exec_times[0]:.2f}ms"
-            else:
-                avg_t = statistics.mean(exec_times)
-                max_t = max(exec_times)
-                min_t = min(exec_times)
-                time_str = f"{avg_t:.2f}ms (min:{min_t:.2f}, max:{max_t:.2f})"
-
-            # 狀態顯示 (簡單著色模擬)
-            # AC 綠色, WA 紅色, TLE 黃色, RE 紫色 (這裡用純文字標示即可，或 simple ANSI codes)
-            # 為了跨平台簡單，這裡先用純文字，未來可擴充 colorama
-            print(f"[{case_name}] Status: {status} | Time: {time_str}")
-
-            if status == self.STATUS_WA:
-                print("  [Wrong Answer Info]")
-                # 縮排顯示錯誤
-                for line in error_msg.splitlines():
-                    print(f"    {line}")
-
-            elif status == self.STATUS_RE:
-                print("  [Runtime Error Info]")
-                print(error_msg)
-
-            elif status == self.STATUS_TLE:
-                # 雖然 TLE，但根據新需求，如果 show_raw_output=True 或為了 debug，可能還是想看 output
-                # 不過這裡 error_msg 是空的 (除非 process kill 失敗?)
-                print("  [Time Limit Exceeded]")
-
-            elif status == self.STATUS_MISSING:
-                print(f"  [Info] {error_msg}")
-                if self.show_missing_output:
-                    print("  [Raw Output (Missing .out)]")
-                    print(output)
-                    print("  [End Raw Output]")
-
-            if show_raw_output:
-                print("  [Raw Output]")
-                print(output)
-                print("  [End Raw Output]")
-
-            print("-" * 40)
+            # 6. 即時顯示結果
+            self._print_test_result(result, show_raw_output)
 
         return results
 
