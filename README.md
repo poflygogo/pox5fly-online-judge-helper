@@ -80,6 +80,6 @@ project/
 
 ## FAQ
 
-### 為什麼執行時出現 `[ERROR] Recursive call detected!`？
+### 為什麼測試看似有跑，但實際上沒執行我的程式碼？
 
-**A**: 這代表您在呼叫 `run_tests()` 時忘記傳入 `sol_func` 參數，或者您傳入的不是函式。請確保寫法如下 `test.run_tests(sol_func=your_main_func)`。
+**A**: 這通常是因為您在呼叫 `run_tests()` 時忘記傳入 `sol_func` 參數，或者您傳入的不是函式。請確保寫法如下 `test.run_tests(sol_func=your_main_func)`，這樣與子行程架構才能正確串接。
