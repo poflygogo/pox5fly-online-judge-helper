@@ -99,7 +99,7 @@ project/
 
 ## API 參數與進階用法
 
-更多詳細參數說明與進階功能 (如指定測資、嚴格比對模式等)，請參考完整的使用說明書： [./docs/manual.md](./docs/manual.md)
+更多詳細參數說明與進階功能 (如指定測資、嚴格比對模式等)，請參考完整的使用[說明書](./docs/01manual.md)
 
 ---
 
@@ -141,4 +141,4 @@ test.run_tests(sol_func=your_main_func())
 - **全域變數**: 存取時需要進行字典 (Dictionary) 查找，指令較慢 (`LOAD_GLOBAL` / `STORE_NAME`)。
 - **區域變數**: 在編譯時已確定位置，改用陣列索引方式直接存取，指令極快 (`LOAD_FAST` / `STORE_FAST`)。
 
-在 Online Judge 這種對執行時間錙銖必較的環境下，將主邏輯寫在 `solve()` 或 `main()` 函式中，往往能避免不必要的 **TLE (Time Limit Exceeded)**。
+在 Online Judge 這種對執行時間錙銖必較的環境下，將主邏輯封裝在函式中，往往能避免不必要的 **TLE (Time Limit Exceeded)**。
