@@ -107,4 +107,38 @@ project/
 
 ### 為什麼測試看似有跑，但實際上沒執行我的程式碼？
 
-**A**: 這通常是因為您在呼叫 `run_tests()` 時忘記傳入 `sol_func` 參數，或者您傳入的不是函式。請確保寫法如下 `test.run_tests(sol_func=your_main_func)`，這樣與子行程架構才能正確串接。
+這通常是因為您在呼叫 `run_tests()` 時忘記傳入 `sol_func` 參數，或者您傳入的不是函式。請確保寫法如下 `test.run_tests(sol_func=your_main_func)`，這樣與子行程架構才能正確串接。
+
+正確寫法:
+
+```py
+test = OnlineJudgeTester(__file__)
+test.run_tests(sol_func=your_main_func)
+```
+
+錯誤寫法:
+
+```py
+test = OnlineJudgeTester(__file__)
+
+# 請勿必要添加入口函式
+test.run_tests()
+
+# 請勿添加額外的括號
+test.run_tests(sol_func=your_main_func())
+```
+
+### 為什麼要強制將解題邏輯寫在函式裡？除了模組需求外有其他好處嗎？
+
+有的，且非常重要！
+
+模組需求當然是其中一個原因，請原諒我的爛 code
+
+**將邏輯封裝在函式中能顯著提升 Python 程式的執行效能**。
+
+這是因為 Python 對於「區域變數 (Local Variables)」與「全域變數 (Global Variables)」的查找機制不同：
+
+- **全域變數**: 存取時需要進行字典 (Dictionary) 查找，指令較慢 (`LOAD_GLOBAL` / `STORE_NAME`)。
+- **區域變數**: 在編譯時已確定位置，改用陣列索引方式直接存取，指令極快 (`LOAD_FAST` / `STORE_FAST`)。
+
+在 Online Judge 這種對執行時間錙銖必較的環境下，將主邏輯寫在 `solve()` 或 `main()` 函式中，往往能避免不必要的 **TLE (Time Limit Exceeded)**。
