@@ -12,10 +12,35 @@
 
 ## 安裝方式 (Installation)
 
+### 前置需求 (Prerequisites)
+
+- Python 3.8 或以上版本
+
+### 安裝步驟
+
 本專案採用標準 Python 套件結構。請將專案 Clone 下來後，在專案根目錄執行以下指令進行安裝（建議使用 Editable 模式以便隨時更新）：
 
 ```bash
+# 1. 下載專案
+git clone https://github.com/poflygogo/pox5fly-online-judge-helper
+
+# 2. 進入專案目錄
+cd pox5fly-online-judge-helper
+
+# 3. 安裝 (使用 Editable 模式)
 pip install -e .
+```
+
+### 如何更新 (Updating)
+
+由於採用 Editable 模式安裝，您只需要進入該目錄拉取最新程式碼即可：
+
+```bash
+# 假設您尚未在專案目錄中
+cd pox5fly-online-judge-helper
+
+# 拉取最新程式碼，功能即刻生效
+git pull
 ```
 
 ## 快速開始 (Quick Start)
