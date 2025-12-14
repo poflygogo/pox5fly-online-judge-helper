@@ -143,28 +143,11 @@ class OnlineJudgeTester:
             matched = False
             for token in cases_to_run:
                 if isinstance(token, int):
-                    # 整數匹配：自動補零檢查
-                    # 邏輯：檢查 case_name 是否 "等於" token 轉換的字串 (允許前導零)
-                    # 例如 token=1, case_name="01" -> (int("01") == 1) -> Match
-                    # 這裡需謹慎：如果 case_name="test01"，int conversion 會失敗
-                    #
-                    # 改進邏輯 (Requirement): "自動補零匹配 (e.g., 1 -> Match 01.in, 1.in)"
-                    # 實作：
-                    # 1. 嘗試將 case_name 轉數字，若成功且相等 -> match
-                    # 2. 或者，構造幾種補零字串看是否等於 case_name (這比較難涵蓋所有情況)
-                    #
-                    # 採用方案 1：嘗試從 case_name 提取數字並比對
-                    try:
-                        # 簡單一點：若 case_name 全為數字，直接轉 int 比對
-                        if case_name.isdigit() and int(case_name) == token:
-                            matched = True
-                            break
-
-                        # 若 case_name 包含其他字元 (e.g. "a01"), 這種情況下 user 傳 int 1 應該是否要 match?
-                        # 規格書範例: 1 -> match "01.in", "1.in"
-                        # 也就是說，只要 case_name 數值上等於 token 即算。
-                    except ValueError:
-                        pass
+                    # 整數匹配：支援自動補零 (e.g., 1 matches "01")
+                    # 僅當檔名為純數字時才進行數值比對
+                    if case_name.isdigit() and int(case_name) == token:
+                        matched = True
+                        break
 
                 elif isinstance(token, str):
                     # 字串匹配：包含檢查
@@ -247,7 +230,7 @@ class OnlineJudgeTester:
             return self.STATUS_TLE, (stdout if stdout else ""), duration, ""
 
         except Exception as e:
-            # 其他未知錯誤 (e.g. 找不到檔案，但在 init 有檢查過)
+            # 其他未知錯誤 (也許有?我不知道)
             return self.STATUS_RE, "", 0.0, str(e)
 
     def _execute_case_with_repeat(
@@ -305,9 +288,8 @@ class OnlineJudgeTester:
                 return self.STATUS_AC, ""
             else:
                 # 這裡嚴格比對如果不同，可能顯示第一個差異點會比較好，
-                # 但規格書對嚴格比對的錯誤訊息沒特別詳細規定，
-                # 我們可以沿用寬鬆比對的逐行顯示，或者簡單顯示不一致。
-                # 為了方便 debugging，我們嘗試用類似寬鬆比對的格式顯示差異 (針對行)
+                # 沿用寬鬆比對的逐行顯示，或者簡單顯示不一致。
+                # 為了方便，用類似寬鬆比對的格式顯示差異 (針對行)
                 pass
                 # 讓下面的邏輯共用報告生成，只是預處理不同
 
@@ -317,10 +299,6 @@ class OnlineJudgeTester:
             exp_lines = expected_output.splitlines()
         else:
             # 寬鬆比對：去除行尾空白，去除空行
-            # 規格書細節：
-            # 1. splitlines()
-            # 2. strip() each line
-            # 3. remove empty lines
 
             def process_lines(text: str) -> List[str]:
                 lines = text.splitlines()
@@ -446,7 +424,6 @@ class OnlineJudgeTester:
 
         if result.status == self.STATUS_WA:
             print("  [Wrong Answer Info]")
-            # 縮排顯示錯誤
             for line in result.error_message.splitlines():
                 print(f"    {line}")
 
@@ -493,6 +470,7 @@ class OnlineJudgeTester:
             測試結果列表。
         """
         # 0. 檢查並處理子行程執行的情況 (防止遞迴)
+        # 詳細原理請見 docs/03fork_bomb_protection.md
         self._handle_child_process(sol_func)
 
         # 1. 收集與篩選測資
